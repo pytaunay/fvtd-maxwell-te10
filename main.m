@@ -17,17 +17,17 @@ clear all;
 %%% Define the geometry , initial power, constants
 a = 28.4988e-3;
 b = 12.6238e-3;
-L = 5e-2;
+L = 10e-2;
 f = 8e9; % Hz
 P10 = 1; % Watts 
-tmax = 1/f; % N time steps 
+tmax = 4/f; % N time steps 
 
 mu = 4*pi*1e-7;
 eps = 8.851e-12;
 c = 1/sqrt(mu*eps);
 
 % Number of discretization points
-Nx = 15;
+Nx = 20;
 Ny = 5;
 Nz = 30;
 Nt = 100; % Number of 
@@ -108,12 +108,12 @@ zpmat = zeros(3,3);
 zpmat(1,2) = -1;
 zpmat(2,1) = 1;
 
-cpmat{1} = xpmat;
-cpmat{2} = -xpmat;
-cpmat{3} = ypmat;
-cpmat{4} = -ypmat;
-cpmat{5} = zpmat;
-cpmat{6} = -zpmat;
+cpmat{1} = -xpmat;
+cpmat{2} = xpmat;
+cpmat{3} = -ypmat;
+cpmat{4} = ypmat;
+cpmat{5} = -zpmat;
+cpmat{6} = zpmat;
 
 
 alpha_mat = eye(6);
@@ -132,15 +132,14 @@ tic()
 
 %%% Original values
 for i=1:Nx
-    for j=1:Ny
+    for j=1:Ny       
         for k=1:Nz
             Ueall{i,j,k,nt} = Ue{i,j,k};
         end
     end
 end
 
-%while t < tmax
-for m=1:5
+while t < tmax
 	t = t+dt;
 	%%% Calculate the flux
 	for i=1:Nx
@@ -169,12 +168,12 @@ for m=1:5
                     coord = idx(1:3);
                     S = idx(4);
                     
-                    if coord(1) <= 0 || coord(1) >= Nx || coord(2) <= 0 || coord(2) >= Ny || coord(3) >= Nz
+                    if coord(1) <= 0 || coord(1) >= Nx || coord(2) <= 0 || coord(2) >= Ny 
                         %%% Boundary condition: perfect electric conductor
                         EHs = eh_pec(Ei,Hi,Y,cpmat,l); 
-                        %F = F+alpha_mat*eh_flux(EHs(1:3,1),EHs(4:6,1))*Nmat(:,l)*S;
-                        F = F+alpha_mat*eh_flux(zeros(3,1),zeros(3,1))*Nmat(:,l)*S;
-                    elseif coord(3) <= 0 %|| coord(3) >= Nz
+                        F = F+alpha_mat*EHs*S;
+                        %F = F+alpha_mat*eh_flux(zeros(3,1),zeros(3,1))*Nmat(:,l)*S;
+                    elseif coord(3) <= 0 || coord(3) >= Nz
                         %%% Boundary condition: TE10 mode excitation
                         % Center of surface coordinate
                         xs = dx*(i-1) + dx/2; 
@@ -196,11 +195,11 @@ for m=1:5
                         % From the definition of the flux function 
                         Fmaxw = 1/2*alpha_mat*eh_flux(El,Hl)*Nmat(:,l);
                         % Cross product term
-                        Fcp = alpha_mat*Pmat{l}*[Ei-El;Hi-Hl];
+                        Fcp = c/2*Pmat{l}*[Ei-El;Hi-Hl];
                     
                         F = F+(Fmaxw+Fcp)*S;
                     end
-                end
+                end % for l=1:Ns
 
                 %%% Euler to update the fields
                 Un = cat(1,Ei,Hi) - 1/dV*dt*F; 
