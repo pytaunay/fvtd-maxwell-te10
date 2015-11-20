@@ -5,8 +5,8 @@
 function A = flux_matrix(n,mu,eps)
 
     nx = n(1,1);
-    ny = n(1,1);
-    nz = n(1,1);
+    ny = n(2,1);
+    nz = n(3,1);
 
     c = 1/sqrt(mu*eps); 
 
@@ -24,12 +24,12 @@ function A = flux_matrix(n,mu,eps)
         ny/eps,-nx/eps,0];
 
     % Lower left
-    LL = [0,nz/mu,-ny/mu;
-        -nz/mu,0,nx/mu; 
-        ny/mu,-nx/mu,0];
+    LL = [0,-nz/mu,ny/mu;
+        nz/mu,0,-nx/mu; 
+        -ny/mu,nx/mu,0];
 
     % Fill top left, bottom right
-    A = kron(Ab,eye(2));
+    A = kron(eye(2),UL);
     
     % Fill top right and botom left
     A(1:3,4:6) = UR;

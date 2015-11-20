@@ -20,17 +20,17 @@ b = 12.6238e-3;
 L = 10e-2;
 f = 8e9; % Hz
 P10 = 1; % Watts 
-tmax = 4/f; % N time steps 
+tmax = 1/f; % N time steps 
 
 mu = 4*pi*1e-7;
 eps = 8.851e-12;
 c = 1/sqrt(mu*eps);
 
 % Number of discretization points
-Nx = 20;
+Nx = 10;
 Ny = 5;
-Nz = 30;
-Nt = 100; % Number of 
+Nz = 50;
+Nt = 200; % Number of 
 Ns = 6; % number of sides
 
 dx = a/Nx;
@@ -60,15 +60,25 @@ Uhn = cell(Nx,Ny,Nz);
 [Uhn{:}] = deal(zeros(3,1));
 
 Ueall = cell(Nx,Ny,Nz,ceil(tmax/dt));
-[Uen{:}] = deal(zeros(3,1));
+Uhall = cell(Nx,Ny,Nz,ceil(tmax/dt));
+%[Ueall{:}] = deal(zeros(3,1));
+%[Uhall{:}] = deal(zeros(3,1));
 
 
-%%% Create some temporary matrix holders
+%%% Create some matrix holders
 
 % Matrix of surface normals
 Nmat = [-1,1,0,0,0,0;
         0,0,-1,1,0,0;
         0,0,0,0,-1,1];
+
+% Assuming that mu and eps are constant everywhere, get Ap and Am for each vector direction
+Apmat = cell(6,1);
+Ammat = cell(6,1);
+for l=1:Ns
+    Apmat{l} = flux_matrix(Nmat(:,l),mu,eps);
+    Ammat{l} = -flux_matrix(-Nmat(:,l),mu,eps);
+end
 
 % Matrix to extract perpendicular components
 xpmat = zeros(6,6);
@@ -115,7 +125,7 @@ cpmat{4} = ypmat;
 cpmat{5} = -zpmat;
 cpmat{6} = zpmat;
 
-
+% Alpha inverse matrix
 alpha_mat = eye(6);
 alpha_mat(1,1) = 1/eps;
 alpha_mat(2,2) = 1/eps;
@@ -124,6 +134,14 @@ alpha_mat(3,3) = 1/eps;
 alpha_mat(4,4) = 1/mu;
 alpha_mat(5,5) = 1/mu;
 alpha_mat(6,6) = 1/mu;
+
+am1 = alpha_mat^-1;
+
+% Matrix for PEC BC
+Tpec = zeros(6,6);
+Tpec(1,1) = 2;
+Tpec(2,2) = 2;
+Tpec(3,3) = 2;
 
 %%% Time stepping
 t = 0;
@@ -138,7 +156,7 @@ for i=1:Nx
         end
     end
 end
-
+EHvec = zeros(6,Nx);
 while t < tmax
 	t = t+dt;
 	%%% Calculate the flux
@@ -168,36 +186,51 @@ while t < tmax
                     coord = idx(1:3);
                     S = idx(4);
                     
-                    if coord(1) <= 0 || coord(1) >= Nx || coord(2) <= 0 || coord(2) >= Ny 
-                        %%% Boundary condition: perfect electric conductor
-                        EHs = eh_pec(Ei,Hi,Y,cpmat,l); 
-                        F = F+alpha_mat*EHs*S;
-                        %F = F+alpha_mat*eh_flux(zeros(3,1),zeros(3,1))*Nmat(:,l)*S;
-                    elseif coord(3) <= 0 || coord(3) >= Nz
-                        %%% Boundary condition: TE10 mode excitation
+                    %%% Boundary condition: perfect electric conductor
+                    if coord(1) <= 0 || coord(1) > Nx || coord(2) <= 0 || coord(2) > Ny 
+                        F = F + (Tpec*Apmat{l}*[Ei;Hi])*S;
+                        %F = F + (Tpec*Apmat{l}*[Ei;Hi] + 2*Apmat{l}*[Ei;zeros(3,1)])*S;
+
+                    %%% Boundary condition: TE10 mode excitation
+                    elseif coord(3) <= 0 
                         % Center of surface coordinate
                         xs = dx*(i-1) + dx/2; 
-                        if(coord(3) <= 0)
-                            zs = 0;
-                        else
-                            zs = L;
-                        end
+                        zs = 0;
 
-                        EHs = eh_te10(xs,zs,t,a,A10,om,mu,eps,beta);
+                        %if( t < 2*dt ) 
+                            EHs = eh_te10(xs,zs,t,a,A10,om,mu,eps,beta);
+                            F = F + (Apmat{l}*[Ei;Hi] + Ammat{l}*EHs)*S;
+                            %EHvec(:,i) = EHs;
+                        %else 
+                        %    F = F + Apmat{l}*[Ei;Hi]*S;
+                        %F = F + (Tpec*Apmat{l}*[Ei;Hi])*S;
+                      % end 
 
-                        F = F+alpha_mat*eh_flux(EHs(1:3,1),EHs(4:6,1))*Nmat(:,l)*S;
+                    %%% Absorbing BC
+                    elseif coord(3) > Nz
+                        %nvec = Nmat(:,l);
+                        %Ap = flux_matrix(nvec,mu,eps);
+                        F = F + Apmat{l}*[Ei;Hi]*S;
+
+                    %%% General case
                     else
-                        %%% General case
                         % Get the neighbor's fields
                         El = Ue{coord(1),coord(2),coord(3)};
                         Hl = Uh{coord(1),coord(2),coord(3)};
                         
                         % From the definition of the flux function 
-                        Fmaxw = 1/2*alpha_mat*eh_flux(El,Hl)*Nmat(:,l);
+                        %Fmaxw = 1/2*alpha_mat*eh_flux(El,Hl)*Nmat(:,l);
                         % Cross product term
-                        Fcp = c/2*Pmat{l}*[Ei-El;Hi-Hl];
+                        %Fcp = c/2*Pmat{l}*[Ei-El;Hi-Hl];
+                        
+                        % Get the A+ and A- matrices
+                        %nvec = Nmat(:,l);
+                        %Ap = flux_matrix(nvec,mu,eps);
+                        %Am = -flux_matrix(-nvec,mu,eps);
+                        %F = F+ alpha_mat^(-1)*(Ap*[Ei;Hi] + Am*[El;Hl]);
+                        F = F + (Apmat{l}*[Ei;Hi] + Ammat{l}*[El;Hl])*S;
                     
-                        F = F+(Fmaxw+Fcp)*S;
+                        %F = F+(Fmaxw+Fcp)*S;
                     end
                 end % for l=1:Ns
 
@@ -218,6 +251,7 @@ while t < tmax
         for j=1:Ny
             for k=1:Nz
                 Ueall{i,j,k,nt} = Ue{i,j,k};
+                Uhall{i,j,k,nt} = Uh{i,j,k};
             end
         end
     end
